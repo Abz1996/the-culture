@@ -1,0 +1,30 @@
+# Local development / integration testing — mirrors what runs in Kubernetes.
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: habesha-backend:local
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4000/healthz', r => process.exit(r.statusCode===200?0:1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+    image: habesha-frontend:local
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy

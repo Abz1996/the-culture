@@ -113,22 +113,21 @@ pipeline {
       when { branch 'main' }
       steps {
         withCredentials([file(credentialsId: 'kubeconfig-habesha', variable: 'KUBECONFIG')]) {
-          sh """
-            kubectl apply -f k8s/namespace.yaml
-            kubectl apply -f k8s/configmap.yaml
-            kubectl apply -f k8s/backend-deployment.yaml
-            kubectl apply -f k8s/backend-service.yaml
-            kubectl apply -f k8s/frontend-deployment.yaml
-            kubectl apply -f k8s/frontend-service.yaml
-            kubectl apply -f k8s/ingress.yaml
-            kubectl apply -f k8s/hpa.yaml
+            sh """
+  kubectl apply -f k8s/configmap.yaml
+  kubectl apply -f k8s/backend-deployment.yaml
+  kubectl apply -f k8s/backend-service.yaml
+  kubectl apply -f k8s/frontend-deployment.yaml
+  kubectl apply -f k8s/frontend-service.yaml
+  kubectl apply -f k8s/ingress.yaml
+  kubectl apply -f k8s/hpa.yaml
 
-            kubectl -n ${K8S_NAMESPACE} set image deployment/backend  backend=${BACKEND_IMAGE}:${IMAGE_TAG}
-            kubectl -n ${K8S_NAMESPACE} set image deployment/frontend frontend=${FRONTEND_IMAGE}:${IMAGE_TAG}
+  kubectl -n ${K8S_NAMESPACE} set image deployment/backend  backend=${BACKEND_IMAGE}:${IMAGE_TAG}
+  kubectl -n ${K8S_NAMESPACE} set image deployment/frontend frontend=${FRONTEND_IMAGE}:${IMAGE_TAG}
 
-            kubectl -n ${K8S_NAMESPACE} rollout status deployment/backend  --timeout=180s
-            kubectl -n ${K8S_NAMESPACE} rollout status deployment/frontend --timeout=180s
-          """
+  kubectl -n ${K8S_NAMESPACE} rollout status deployment/backend  --timeout=180s
+  kubectl -n ${K8S_NAMESPACE} rollout status deployment/frontend --timeout=180s
+"""
         }
       }
     }

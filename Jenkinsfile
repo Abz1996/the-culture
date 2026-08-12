@@ -3,7 +3,15 @@
 // Requires Jenkins credentials:
 //   - "dockerhub-creds"     (Username/Password or Docker registry token)
 //   - "kubeconfig-habesha"  (Secret file: kubeconfig for the target cluster)
-//   - "github-token"        (used by the GitHub webhook / status API, optional)
+//
+// Namespace strategy:
+//   - branch "main" deploys to the "habesha-table" namespace
+//   - branch "dev"  deploys to the "dev" namespace
+//   - any other branch just runs tests/build (no deploy)
+//
+// NOTE: env.BRANCH_NAME is only populated in a Multibranch Pipeline job.
+// If this is a plain single-branch Pipeline job, convert it to Multibranch
+// (Branch Sources -> Git -> your repo) or this logic has nothing to key off.
 
 pipeline {
   agent any
@@ -19,7 +27,6 @@ pipeline {
     BACKEND_IMAGE   = "${REGISTRY}/habesha-backend"
     FRONTEND_IMAGE  = "${REGISTRY}/habesha-frontend"
     IMAGE_TAG       = "${env.BUILD_NUMBER}-${GIT_COMMIT.take(7)}"
-    K8S_NAMESPACE   = "habesha-table"
   }
 
   triggers {
@@ -34,6 +41,21 @@ pipeline {
         checkout scm
         script {
           env.GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+        }
+      }
+    }
+
+    stage('Determine Environment') {
+      steps {
+        script {
+          if (env.BRANCH_NAME == 'main') {
+            env.K8S_NAMESPACE = 'habesha-table'
+          } else if (env.BRANCH_NAME == 'dev') {
+            env.K8S_NAMESPACE = 'dev'
+          } else {
+            env.K8S_NAMESPACE = 'none' // feature branches: build/test only, no deploy
+          }
+          echo "Branch '${env.BRANCH_NAME}' -> namespace '${env.K8S_NAMESPACE}'"
         }
       }
     }
@@ -110,30 +132,38 @@ pipeline {
     }
 
     stage('Deploy to Kubernetes') {
-      when { branch 'main' }
+      when {
+        anyOf { branch 'main'; branch 'dev' }
+      }
       steps {
         withCredentials([file(credentialsId: 'kubeconfig-habesha', variable: 'KUBECONFIG')]) {
-            sh """
-  kubectl apply -f k8s/configmap.yaml
-  kubectl apply -f k8s/backend-deployment.yaml
-  kubectl apply -f k8s/backend-service.yaml
-  kubectl apply -f k8s/frontend-deployment.yaml
-  kubectl apply -f k8s/frontend-service.yaml
-  kubectl apply -f k8s/ingress.yaml
-  kubectl apply -f k8s/hpa.yaml
+          sh """
+            # Create the namespace if it doesn't already exist (idempotent, no
+            # cluster-scoped Namespace object checked into k8s/ needed).
+            kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
 
-  kubectl -n ${K8S_NAMESPACE} set image deployment/backend  backend=${BACKEND_IMAGE}:${IMAGE_TAG}
-  kubectl -n ${K8S_NAMESPACE} set image deployment/frontend frontend=${FRONTEND_IMAGE}:${IMAGE_TAG}
+            kubectl apply -n ${K8S_NAMESPACE} -f k8s/configmap.yaml
+            kubectl apply -n ${K8S_NAMESPACE} -f k8s/backend-deployment.yaml
+            kubectl apply -n ${K8S_NAMESPACE} -f k8s/backend-service.yaml
+            kubectl apply -n ${K8S_NAMESPACE} -f k8s/frontend-deployment.yaml
+            kubectl apply -n ${K8S_NAMESPACE} -f k8s/frontend-service.yaml
+            kubectl apply -n ${K8S_NAMESPACE} -f k8s/ingress.yaml
+            kubectl apply -n ${K8S_NAMESPACE} -f k8s/hpa.yaml
 
-  kubectl -n ${K8S_NAMESPACE} rollout status deployment/backend  --timeout=180s
-  kubectl -n ${K8S_NAMESPACE} rollout status deployment/frontend --timeout=180s
-"""
+            kubectl -n ${K8S_NAMESPACE} set image deployment/backend  backend=${BACKEND_IMAGE}:${IMAGE_TAG}
+            kubectl -n ${K8S_NAMESPACE} set image deployment/frontend frontend=${FRONTEND_IMAGE}:${IMAGE_TAG}
+
+            kubectl -n ${K8S_NAMESPACE} rollout status deployment/backend  --timeout=180s
+            kubectl -n ${K8S_NAMESPACE} rollout status deployment/frontend --timeout=180s
+          """
         }
       }
     }
 
     stage('Smoke Test') {
-      when { branch 'main' }
+      when {
+        anyOf { branch 'main'; branch 'dev' }
+      }
       steps {
         withCredentials([file(credentialsId: 'kubeconfig-habesha', variable: 'KUBECONFIG')]) {
           sh """

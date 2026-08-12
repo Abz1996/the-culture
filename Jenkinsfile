@@ -15,7 +15,7 @@ pipeline {
   }
 
   environment {
-    REGISTRY        = "docker.io/your-org"
+    REGISTRY        = "docker.io/abz1996"
     BACKEND_IMAGE   = "${REGISTRY}/habesha-backend"
     FRONTEND_IMAGE  = "${REGISTRY}/habesha-frontend"
     IMAGE_TAG       = "${env.BUILD_NUMBER}-${GIT_COMMIT.take(7)}"
